@@ -99,6 +99,7 @@ class DonJonMapForm extends FormApplication {
             let walls = map.getProcessedWalls().map(m => m.map(v => v*g)).map(m => { return {c : m} });
 
 
+        console.log(map.matrix);
 
             let doors = map.doors.flatMap(d => doorToWall(d, map.matrix));
 
@@ -107,9 +108,10 @@ class DonJonMapForm extends FormApplication {
                 d["c"] = d["c"].map(v => v*g);
                 return d;
             });
-;
 
+            // Creates all the walls
             walls = walls.concat(doors);
+
 
             await newScene.createEmbeddedDocuments("Wall", walls, {noHook: false});
 
@@ -289,7 +291,16 @@ function checkRoom(roomRow, roomIndex){
 }
 
 
+// DOOR TYPES
 
+const DOOR_ARCH = 65540;
+const DOOR_PORTCULLIS = 2097156;
+const DOOR_LOCKED = 262148; 
+const DOOR_TRAP = 524292; 
+const DOOR_SECRET = 1048580;
+const DOOR_DOOR = 131076;
+
+// Helper function that converts a JSON door input to a wall (in map grid coordinates)
 function doorToWall(door, rooms) {
     let result = {};
     const offset = 0.75;
@@ -298,14 +309,24 @@ function doorToWall(door, rooms) {
     // rooms
     // this.matrix[x][y] = true;
 
-    if(checkRoom(rooms[door[0]+1],door[1]) && checkRoom(rooms[door[0]-1],door[1])) result["c"] = [door[0], door[1]-offset,door[0], door[1]+offset];
-    else if(checkRoom(rooms[door[0]],door[1]+1) && checkRoom(rooms[door[0]],door[1]-1)) result["c"] = [door[0]-offset, door[1],door[0]+offset, door[1]];
+    if(checkRoom(rooms[door[0]+1],door[1]) && checkRoom(rooms[door[0]-1],door[1])) door[2]=-1;
+    else if(checkRoom(rooms[door[0]],door[1]+1) && checkRoom(rooms[door[0]],door[1]-1)) door[2]=1;
 
+
+    if (door[2] == -1) result["c"] = [door[0], door[1]-offset,door[0], door[1]+offset];
+    if (door[2] ==  1) result["c"] = [door[0]-offset, door[1],door[0]+offset, door[1]];
 
     result["c"] = result["c"].map(p => p + 0.5);
 
 
+
     result["door"] =  CONST.WALL_DOOR_TYPES.DOOR;
+
+    if(door[3] == DOOR_ARCH) result["ds"] = CONST.WALL_DOOR_STATES.OPEN;
+    if(door[3] == DOOR_LOCKED) result["ds"] = CONST.WALL_DOOR_STATES.LOCKED;
+    if(door[3] == DOOR_TRAP) result["ds"] = CONST.WALL_DOOR_STATES.LOCKED;
+    if(door[3] == DOOR_PORTCULLIS) {result["ds"] = CONST.WALL_DOOR_STATES.LOCKED; result["sense"] = CONST.WALL_SENSE_TYPES.NONE;}
+    if(door[3] == DOOR_SECRET) result["door"] = CONST.WALL_DOOR_TYPES.SECRET;
 
 
     return result;
