@@ -1,6 +1,7 @@
 const WALL_OFFSET = 0.25;
 
 const NOT_ROOMS = [0, 16];
+const DOORS = [65540, 2097156, 262148, 524292, 1048580, 131076];
 
 // The DonJonMap class
 export class DonJonMap {
@@ -81,8 +82,6 @@ class DonJonMapForm extends FormApplication {
         let data = await JSON.parse(formData.json);
         let map = new MatrixMap();
 
-        //data["rects"].forEach(r => map.addRect(r));
-
 		map.addRooms(data["cells"]);
 
         try {
@@ -100,6 +99,18 @@ class DonJonMapForm extends FormApplication {
             let walls = map.getProcessedWalls().map(m => m.map(v => v*g)).map(m => { return {c : m} });
 
 
+
+            let doors = map.doors.flatMap(d => doorToWall(d, map.matrix));
+
+
+            doors = doors.map(d => {
+                d["c"] = d["c"].map(v => v*g);
+                return d;
+            });
+;
+
+            walls = walls.concat(doors);
+
             await newScene.createEmbeddedDocuments("Wall", walls, {noHook: false});
 
         } catch (error) {
@@ -116,10 +127,13 @@ class MatrixMap {
     matrix;
     // for fast iterating
     list;
+    //x,y,direction,type
+    doors;
 
     constructor() {
         this.matrix = {};
         this.list = [];
+        this.doors = [];
     }
 
     get(x, y) {
@@ -147,6 +161,7 @@ class MatrixMap {
 		for(let i = 0; i < cells.length; i++){
 			for(let j = 0; j < cells[i].length; j++){
 				if(NOT_ROOMS.indexOf(cells[i][j]) == -1) this.put(j, i);
+                if(DOORS.indexOf(cells[i][j]) != -1 ) this.doors.push([j,i,0,cells[i][j]]);
 			}
 		}  
     }
@@ -265,4 +280,33 @@ class MatrixMap {
         return result;
     }
 
+}
+
+function checkRoom(roomRow, roomIndex){
+    if(roomRow === undefined) return false;
+    if(roomRow[roomIndex] === undefined)  return false;
+    return roomRow[roomIndex];
+}
+
+
+
+function doorToWall(door, rooms) {
+    let result = {};
+    const offset = 0.75;
+    // door
+    // this.doors.push([j,i,0,cells[i][j]]);
+    // rooms
+    // this.matrix[x][y] = true;
+
+    if(checkRoom(rooms[door[0]+1],door[1]) && checkRoom(rooms[door[0]-1],door[1])) result["c"] = [door[0], door[1]-offset,door[0], door[1]+offset];
+    else if(checkRoom(rooms[door[0]],door[1]+1) && checkRoom(rooms[door[0]],door[1]-1)) result["c"] = [door[0]-offset, door[1],door[0]+offset, door[1]];
+
+
+    result["c"] = result["c"].map(p => p + 0.5);
+
+
+    result["door"] =  CONST.WALL_DOOR_TYPES.DOOR;
+
+
+    return result;
 }
