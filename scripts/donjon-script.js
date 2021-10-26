@@ -1,5 +1,7 @@
 const WALL_OFFSET = 0.25;
 
+const GRID = 50;
+
 const NOT_ROOMS = [0, 16];
 const DOORS = [65540, 2097156, 262148, 524292, 1048580, 131076];
 
@@ -39,7 +41,7 @@ class DonJonMapForm extends FormApplication {
         const promiseResult = new Promise(async (resolve, reject) => {
 
             let validData = true;
-            formData.grid = 50;
+            formData.grid = GRID;
 
             if(formData.name === ""){
                 ui.notifications.error("Must eneter Scene name");
@@ -84,6 +86,17 @@ class DonJonMapForm extends FormApplication {
 
 		map.addRooms(data["cells"]);
 
+        //data["rooms"].filter(r => r !=null).forEach(r => map.addRectRoom(r));
+
+        data["rooms"].filter(r => r !=null).forEach(r => map.addInhabited(r));
+
+        let tokenData = await map.getTokenData();
+
+        tokenData = tokenData.filter(t => t !== null);
+
+        getImportActorData(map.hashMonsters);
+
+
         try {
             const newScene = await Scene.create({
                 name: formData.name == "" ? "TEST" : formData.name,
@@ -97,9 +110,8 @@ class DonJonMapForm extends FormApplication {
             });
             let g = formData.grid;
             let walls = map.getProcessedWalls().map(m => m.map(v => v*g)).map(m => { return {c : m} });
+            
 
-
-        console.log(map.matrix);
 
             let doors = map.doors.flatMap(d => doorToWall(d, map.matrix));
 
@@ -113,11 +125,15 @@ class DonJonMapForm extends FormApplication {
             walls = walls.concat(doors);
 
 
+
+
             await newScene.createEmbeddedDocuments("Wall", walls, {noHook: false});
+            await newScene.createEmbeddedDocuments('Token', tokenData, {noHook: false});
 
         } catch (error) {
             ui.notifications.error(error);
             console.log("DonJonMap | Error creating scene");
+            throw( error );
         }
 
     }
@@ -132,10 +148,16 @@ class MatrixMap {
     //x,y,direction,type
     doors;
 
+    monsters;
+    hashMonsters;
+
     constructor() {
         this.matrix = {};
         this.list = [];
         this.doors = [];
+
+        this.monsters = [];
+        this.hashMonsters = {};
     }
 
     get(x, y) {
@@ -158,8 +180,44 @@ class MatrixMap {
         }
     }
 
-	addRooms(cells) {
+    addRectRoom(rect) {
+        for (let x = rect.col; x < rect.col + (rect.width/10); x++) {
+            for (let y = rect.row; y < rect.row + (rect.height/10); y++) {
+                this.put(x, y);
+                if (!this.matrix2[x]) {
+                    this.matrix2[x] = {};
+                }
+                this.matrix2[x][y] = true;
+            }
+        }
+    }
 
+    addInhabited(rect) {
+        let x = rect.col;
+        let y = rect.row;
+
+        if (rect.contents.inhabited) {
+            let inhabited = ("1 x " + rect.contents.inhabited).split(" and ");
+            inhabited.forEach( i => {
+                let str = i.match(/(\d) x ([-A-z ]+)/);
+                this.monsters.push([str[2],str[1],x,y]);
+                this.hashMonsters[str[2]] = str[2];
+            });
+        }
+
+        /*
+        for (let x = rect.col; x < rect.col + (rect.width/10); x++) {
+            for (let y = rect.row; y < rect.row + (rect.height/10); y++) {
+                this.put(x, y);
+                if (!this.matrix2[x]) {
+                    this.matrix2[x] = {};
+                }
+                this.matrix2[x][y] = true;
+            }
+        }*/
+    }
+
+	addRooms(cells) {
 		for(let i = 0; i < cells.length; i++){
 			for(let j = 0; j < cells[i].length; j++){
 				if(NOT_ROOMS.indexOf(cells[i][j]) == -1) this.put(j, i);
@@ -282,6 +340,28 @@ class MatrixMap {
         return result;
     }
 
+    async getTokenData(){
+        let result = [];
+
+        for (let m of this.monsters) {
+            if(m) {
+                let monst = await getMonster(m);
+                result.push(monst);
+            }
+        }
+
+        // this.monsters.forEach(
+        //     m => {
+        //         if(m) {
+        //             let monst = await getMonster(m);
+        //             result.push(monst);
+        //         }
+        //     }
+        // );
+
+        return result;
+    }
+
 }
 
 function checkRoom(roomRow, roomIndex){
@@ -330,4 +410,71 @@ function doorToWall(door, rooms) {
 
 
     return result;
+}
+
+async function getMonster(monster){
+
+
+    let monstName = monster[0];
+
+    let number = monster[1];
+    let posX = monster[2];
+    let posY = monster[3];
+    let actorInPack;
+
+    if (game.actors.find(a => a.data.name == monstName) === undefined) {
+        return null;
+    } 
+
+    actorInPack = await game.actors.find(a => a.data.name == monstName);
+
+
+    const actorData = duplicate(actorInPack.data);
+	let data = {
+		img: actorInPack.data.img,
+        x: posX*GRID,
+        y: posY*GRID
+	}
+
+    // Prepare Token data specific to this placement
+    const td = actorInPack.data.token; 
+    // const hg = GRID / 2;
+    // data.x -= (td.width * hg);
+    // data.y -= (td.height * hg);
+
+
+    // Snap the dropped position and validate that it is in-bounds
+    let tokenData = { x: data.x, y: data.y, hidden: false, img: actorInPack.data.img };
+    // if ( !event.shiftKey ) mergeObject(tokenData, canvas.grid.getSnappedPosition(data.x, data.y, 1));
+    //if ( !canvas.grid.hitArea.contains(tokenData.x, tokenData.y) ) return false;
+
+    // Get the Token image
+    if ( actorData.token.randomImg ) {
+        let images = await (actorInPack.getTokenImages());
+        images = images.filter(i => (images.length === 1) || !(i === this._lastWildcard));
+        const image = images[Math.floor(Math.random() * images.length)];
+        tokenData.img = this._lastWildcard = image;
+    }
+
+    // Merge Token data with the default for the Actor
+    tokenData = mergeObject(actorData.token, tokenData, {inplace: true});
+    tokenData.actorId = actorInPack.data._id;
+    tokenData.actorLink = true;
+
+    return tokenData;
+}
+
+async function getImportActorData(monsters){
+    for (let [monstName, i] of Object.entries(monsters)){
+        /*if (game.actors.find(a => a.data.name == monstName) === undefined) {
+            if (game.packs.get("dnd5e.monsters").index.filter((t) => t.name == monstName).length != 0) {
+                await game.actors.importFromCompendium(game.packs.get("dnd5e.monsters"), game.packs.get("dnd5e.monsters").index.filter((t) => t.name == monstName)[0]._id);
+            }
+        }*/
+        if (game.packs.get("dnd5e.monsters").index.filter((t) => t.name == monstName).length != 0) {
+            if (game.actors.find(a => a.data.name == monstName) === undefined) {
+                await game.actors.importFromCompendium(game.packs.get("dnd5e.monsters"), game.packs.get("dnd5e.monsters").index.filter((t) => t.name == monstName)[0]._id);
+            }
+        }
+    }
 }
