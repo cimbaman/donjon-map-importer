@@ -1,4 +1,4 @@
-# DonJon Map Importer for Foundry VTT
+# donjon Map Importer for Foundry VTT
 
 Create scenes for FoundryVTT from [donjon](https://donjon.bin.sh/fantasy/dungeon/) by downloading "Player's Map" and "JSON".
 
